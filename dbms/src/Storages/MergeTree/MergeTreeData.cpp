@@ -755,20 +755,43 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     auto disks = storage_policy->getDisks();
 
-    /// Reversed order to load part from low priority disks firstly.
-    /// Used for keep part on low priority disk if duplication found
-    for (auto disk_it = disks.rbegin(); disk_it != disks.rend(); ++disk_it)
+    std::vector<Poco::DirectoryIterator> dir_list;
+
+    for (auto disk_it = disks.begin(); disk_it != disks.end(); ++disk_it)
     {
         auto disk_ptr = *disk_it;
-        for (Poco::DirectoryIterator it(getFullPathOnDisk(disk_ptr)); it != end; ++it)
-        {
-            /// Skip temporary directories.
-            if (startsWith(it.name(), "tmp"))
-                continue;
-
-            part_names_with_disks.emplace_back(it.name(), disk_ptr);
-        }
+        Poco::DirectoryIterator it(getFullPathOnDisk(disk_ptr));
+        dir_list.push_back(it);
     }
+
+    LOG_DEBUG(log, "Loading " + std::to_string(disks.size()) + " disks");
+
+    bool is_finish = false;
+
+    while (!is_finish)
+    {
+    	is_finish = true;
+
+    	for(auto iter = dir_list.begin(); iter != dir_list.end(); iter++)
+    	{
+    		auto dir_iter = *iter;
+    		if (dir_iter != end)
+    		{
+    			is_finish = false;
+    		}
+
+            if (startsWith(dir_iter.name(), "tmp")) {
+                       (*iter)++;
+                    continue;
+              }
+
+    		part_names_with_disks.emplace_back(dir_iter.name(), *(iter - dir_list.begin() + disks.begin()));
+
+    		(*iter)++;
+    	}
+    }
+
+    LOG_DEBUG(log, "Loading " + std::to_string(part_names_with_disks.size()) + " parts");
 
     auto part_lock = lockParts();
     data_parts_indexes.clear();
