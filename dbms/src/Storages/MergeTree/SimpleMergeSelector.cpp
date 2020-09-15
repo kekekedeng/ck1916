@@ -1,9 +1,106 @@
 #include <Storages/MergeTree/SimpleMergeSelector.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/interpolate.h>
 
 #include <cmath>
 #include <iostream>
+#include <regex>
+#include <fstream>
 
+#include <unistd.h>
+#include <sys/types.h>
+#include <dirent.h>
+#include <stdio.h>
+#include<sys/types.h>
+#include<sys/stat.h>
+ 
+void mk_dir(std::string dir)
+{
+    DIR *mydir = NULL;
+    if((mydir= opendir(dir.c_str()))==NULL)
+        mkdir(dir.c_str(), S_IRWXU | S_IRWXG | S_IRWXO);
+    else
+        closedir(mydir);
+}
+
+bool is_file_exist(std::string path)
+{
+    if (access(path.c_str(), F_OK) != -1)
+    {
+        return true;
+    }
+    return false;
+}
+
+int read_file_list(std::string path, std::vector<std::string> & result)
+{
+    DIR * dir;
+    struct dirent * ptr;
+
+    if ((dir = opendir(path.c_str())) == NULL)
+    {
+        return -1;
+    }
+
+    while ((ptr = readdir(dir)) != NULL)
+    {
+        if (strcmp(ptr->d_name, ".") == 0 || strcmp(ptr->d_name, "..") == 0) ///current dir OR parrent dir
+        {
+            continue;
+        }
+        else if (ptr->d_type == 8) ///file
+        {
+            result.push_back(std::string(ptr->d_name));
+        }
+    }
+
+    closedir(dir);
+
+    return 0;
+}
+
+int rm_file(std::string filename)
+{
+    if (remove(filename.c_str()) == 0)
+        return 0;
+    else
+        return -1;
+}
+
+int string_split(const std::string & in, const std::string & delim, std::vector<std::string> & ret)
+{
+    try
+    {
+        std::regex re{delim};
+        ret = std::vector<std::string>{std::sregex_token_iterator(in.begin(), in.end(), re, -1), std::sregex_token_iterator()};
+    }
+    catch (const std::exception & e)
+    {
+        return -1;
+    }
+
+    return 0;
+}
+
+int parse_file(const std::string& filename, std::vector<std::string>& part_list)
+{
+    std::ifstream in(filename);
+    std::string line;
+
+    if (in)
+    {
+        while (std::getline(in, line))
+        {
+            part_list.push_back(line);
+        }
+
+        return 0;
+    }
+    else
+    {
+        return -1;
+    }
+}
 
 namespace DB
 {
@@ -184,12 +281,128 @@ void selectWithinPartition(
 
 }
 
+int SimpleMergeSelector::external_select(
+    const Partitions & partitions,
+    SimpleMergeSelector::PartsInPartition& merge_parts)
+{
+    std::string dir_name = "/tmp/merge/";
+    mk_dir(dir_name);
+    std::vector<std::string> file_list;
+    int ret = read_file_list(dir_name, file_list);
+    if(ret != 0) {
+        LOG_ERROR(log, " read_file_list fail " << " ret " << ret);
+        return -1;
+    }
+    if(file_list.size() < 1) {
+        LOG_DEBUG(log, "empty dir");
+        return -1;
+    }
+
+    for(const auto & path : file_list)
+    {
+        LOG_DEBUG(log, " file in dir " << path);
+    }
+
+    std::sort(file_list.begin(), file_list.end());
+
+    std::vector<std::string> part_name_list;
+    std::string path = dir_name + file_list[0];
+    // TODO add flock
+    ret = parse_file(path, part_name_list);
+    if (ret != 0)
+    {
+        LOG_DEBUG(log, " parse fail " << " path " << path << " ret " << ret);
+        return -1;
+    }
+    ret = rm_file(path);
+    if( ret != 0 ) {
+        LOG_ERROR(log, "rm_file fail" << path << " ret " << ret);
+        return -1;
+    }
+
+    std::vector<std::string> cols;
+    ret = string_split(part_name_list[0], "_", cols);
+    if(ret != 0 || cols.size() < 1) {
+        LOG_ERROR(log, " parse partition_id fail " << " part_name " << part_name_list[0]);
+        return -1;
+    }
+    std::string filter_partition_id = cols[0];
+
+    LOG_DEBUG(log, " external_select " << " file_list.size() " << file_list.size() 
+        << " path " << path << " filter_partition_id " << filter_partition_id);
+
+    for (const auto & partition : partitions)
+    {
+        std::string partition_id = "";
+        for (const auto & part_info : partition)
+        {
+            auto part_ptr = *(const MergeTreeData::DataPartPtr *)(part_info.data);
+
+            for (const auto & part_name : part_name_list)
+            {
+                if(partition_id.size() == 0) {
+                    std::vector<std::string> tmp;
+                    ret = string_split(part_ptr->name, "_", tmp);
+                    if(ret != 0 || tmp.size() < 1) {
+                        LOG_ERROR(log, " parse partition_id fail " << " part_name " << part_ptr->name);
+                        return -1;
+                    }
+                    partition_id = tmp[0];
+
+                    if( partition_id != filter_partition_id ) {
+                        goto next_partition;
+                    }
+                }
+
+                if (part_ptr->name == part_name)
+                {
+                    LOG_DEBUG(log, " found " << part_name);
+                    merge_parts.push_back(part_info);
+                    break;
+                }
+            }
+        }
+        next_partition:
+
+        if (merge_parts.size() > 1)
+        {
+            // TODO: check range size
+            // auto begin_pos = find(partition.begin(), partition.end(), merge_parts.front());
+            // auto end_pos = find(partition.begin(), partition.end(), merge_parts.back());
+            // int range_size = end_pos - begin_pos + 1;
+            // if( range_size != merge_parts.size() ) {
+                
+            //     LOG_ERROR(log, " check range_size fail " << " range_size " << range_size 
+            //         << " merge_parts.size() " << merge_parts.size());
+            //     return -1;
+            // }
+
+            auto from_part_ptr = *(const MergeTreeData::DataPartPtr *)(merge_parts.front().data);
+            auto to_part_ptr = *(const MergeTreeData::DataPartPtr *)(merge_parts.back().data);
+            LOG_DEBUG(log, " merge found " << " from " << from_part_ptr->name << " to " << to_part_ptr->name);
+            return 0;
+        }
+    }
+
+    return -1;
+}
 
 SimpleMergeSelector::PartsInPartition SimpleMergeSelector::select(
     const Partitions & partitions,
     const size_t max_total_size_to_merge)
 {
     Estimator estimator;
+
+    SimpleMergeSelector::PartsInPartition merge_parts;
+    int ret = external_select(partitions, merge_parts);
+    if(ret == 0) 
+    {
+        return merge_parts;
+    }
+    else
+    {
+        LOG_DEBUG(log, "external_select fail" << " ret " << ret);
+    }
 
     for (const auto & partition : partitions)
         selectWithinPartition(partition, max_total_size_to_merge, estimator, settings);

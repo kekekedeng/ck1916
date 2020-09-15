@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeSelector.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -71,14 +72,19 @@ public:
         double heuristic_to_remove_small_parts_at_right_max_ratio = 0.01;
     };
 
-    explicit SimpleMergeSelector(const Settings & settings_) : settings(settings_) {}
+    explicit SimpleMergeSelector(const Settings & settings_) : settings(settings_),log(&Logger::get("SimpleMergeSelector")) {}
 
     PartsInPartition select(
         const Partitions & partitions,
         const size_t max_total_size_to_merge) override;
 
+    int external_select(
+        const Partitions & partitions, 
+        SimpleMergeSelector::PartsInPartition& merge_parts);
+
 private:
     const Settings settings;
+    Logger * log;
 };
 
 }
