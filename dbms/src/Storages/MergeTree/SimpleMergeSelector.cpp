@@ -6,13 +6,14 @@
 #include <iostream>
 #include <regex>
 #include <fstream>
+#include <iterator>
 
 #include <unistd.h>
 #include <sys/types.h>
 #include <dirent.h>
 #include <stdio.h>
-#include<sys/types.h>
-#include<sys/stat.h>
+#include <sys/types.h>
+#include <sys/stat.h>
  
 void mk_dir(std::string dir)
 {
@@ -93,6 +94,25 @@ int parse_file(const std::string& filename, std::vector<std::string>& part_list)
         {
             part_list.push_back(line);
         }
+
+        return 0;
+    }
+    else
+    {
+        return -1;
+    }
+}
+
+int read_base_from_file(int& base)
+{
+    std::ifstream in("/tmp/base");
+
+    if (in)
+    {
+        std::istreambuf_iterator<char> begin(in);
+        std::istreambuf_iterator<char> end;
+        std::string some_str(begin, end);
+        base = std::stoi(some_str);
 
         return 0;
     }
@@ -193,7 +213,8 @@ bool allow(
     double min_age,
     double range_size,
     double partition_size,
-    const SimpleMergeSelector::Settings & settings)
+    const SimpleMergeSelector::Settings & settings,
+    const int external_base)
 {
 //    std::cerr << "sum_size: " << sum_size << "\n";
 
@@ -227,6 +248,11 @@ bool allow(
 
     double lowered_base = interpolateLinear(settings.base, 2.0, combined_ratio);
 
+    if(external_base > 0) 
+    {
+        lowered_base = external_base;
+    }
+
 //    std::cerr << "------- lowered_base: " << lowered_base << "\n";
 
     return (sum_size + range_size * settings.size_fixed_cost_to_add) / (max_size + settings.size_fixed_cost_to_add) >= lowered_base;
@@ -237,7 +263,8 @@ void selectWithinPartition(
     const SimpleMergeSelector::PartsInPartition & parts,
     const size_t max_total_size_to_merge,
     Estimator & estimator,
-    const SimpleMergeSelector::Settings & settings)
+    const SimpleMergeSelector::Settings & settings,
+    const int external_base)
 {
     size_t parts_count = parts.size();
     if (parts_count <= 1)
@@ -268,7 +295,7 @@ void selectWithinPartition(
             if (max_total_size_to_merge && sum_size > max_total_size_to_merge)
                 break;
 
-            if (allow(sum_size, max_size, min_age, end - begin, parts_count, settings))
+            if (allow(sum_size, max_size, min_age, end - begin, parts_count, settings, external_base))
                 estimator.consider(
                     parts.begin() + begin,
                     parts.begin() + end,
@@ -404,8 +431,12 @@ SimpleMergeSelector::PartsInPartition SimpleMergeSelector::select(
         LOG_DEBUG(log, "external_select fail" << " ret " << ret);
     }
 
+    int external_base = 0;
+    ret = read_base_from_file(external_base);
+    LOG_DEBUG(log, " read_base_from_file " << " ret " << ret << " external_base " << external_base);
+
     for (const auto & partition : partitions)
-        selectWithinPartition(partition, max_total_size_to_merge, estimator, settings);
+        selectWithinPartition(partition, max_total_size_to_merge, estimator, settings, external_base);
 
     return estimator.getBest();
 }
