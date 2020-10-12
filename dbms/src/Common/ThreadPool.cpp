@@ -1,6 +1,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/Exception.h>
-
+#include <common/logger_useful.h>
 #include <type_traits>
 
 
@@ -103,6 +103,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
             try
             {
                 threads.front() = Thread([this, it = threads.begin()] { worker(it); });
+                LOG_DEBUG(&Logger::get("ThreadPoolImpl"), "create Thread " << threads.size());
             }
             catch (...)
             {

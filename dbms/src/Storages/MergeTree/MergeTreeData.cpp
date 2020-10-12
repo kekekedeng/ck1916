@@ -55,7 +55,7 @@
 #include <typeinfo>
 #include <typeindex>
 #include <optional>
-
+#include <time.h>
 
 namespace ProfileEvents
 {
@@ -3534,7 +3534,14 @@ MergeTreeData::CurrentlyMovingPartsTagger MergeTreeData::selectPartsForMove()
             *reason = "part is already moving.";
             return false;
         }
-
+        time_t tp;
+        time(&tp);
+        if ( ( tp - part->modification_time ) < 120)
+        {
+            *reason = "part is too young";
+            //LOG_INFO(log,"can_move too young "<< part->name << " " << part->modification_time );
+            return false;
+        }
         return true;
     };
 

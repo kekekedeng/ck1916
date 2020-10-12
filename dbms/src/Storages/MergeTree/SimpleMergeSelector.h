@@ -26,7 +26,7 @@ public:
           *
           * We need some balance between write amplification and number of parts.
           */
-        double base = 5;
+        double base = 20;
 
         /** Base is lowered until 1 (effectively means "merge any two parts") depending on several variables:
           *
@@ -48,11 +48,11 @@ public:
 
         time_t min_age_to_lower_base_at_min_size = 10;
         time_t min_age_to_lower_base_at_max_size = 10;
-        time_t max_age_to_lower_base_at_min_size = 3600;
-        time_t max_age_to_lower_base_at_max_size = 30 * 86400;
+        time_t max_age_to_lower_base_at_min_size = 24 * 3600;
+        time_t max_age_to_lower_base_at_max_size = 24 * 3600;
 
         size_t min_parts_to_lower_base = 10;
-        size_t max_parts_to_lower_base = 50;
+        size_t max_parts_to_lower_base = 10000;
 
         /// Add this to size before all calculations. It means: merging even very small parts has it's fixed cost.
         size_t size_fixed_cost_to_add = 5 * 1024 * 1024;

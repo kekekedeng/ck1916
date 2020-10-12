@@ -88,8 +88,10 @@ bool Disk::tryReserve(UInt64 bytes) const
         ++reservation_count;
         return true;
     }
-
+    //LOG_DEBUG(&Logger::get("DiskSpaceMonitor"), "before getAvailableSpace" << backQuote(name));
     auto available_space = getAvailableSpace();
+    //LOG_DEBUG(&Logger::get("DiskSpaceMonitor"), "after getAvailableSpace" << backQuote(name));
+    
     UInt64 unreserved_space = available_space - std::min(available_space, reserved_bytes);
     if (unreserved_space >= bytes)
     {
