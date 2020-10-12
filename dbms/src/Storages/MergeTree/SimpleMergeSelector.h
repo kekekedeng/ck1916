@@ -72,7 +72,8 @@ public:
         double heuristic_to_remove_small_parts_at_right_max_ratio = 0.01;
     };
 
-    explicit SimpleMergeSelector(const Settings & settings_) : settings(settings_),log(&Logger::get("SimpleMergeSelector")) {}
+    explicit SimpleMergeSelector(const Settings & settings_, const String & database, const String & table) 
+      : settings(settings_),log(&Logger::get("SimpleMergeSelector")),database_(database),table_(table) {}
 
     PartsInPartition select(
         const Partitions & partitions,
@@ -85,6 +86,8 @@ public:
 private:
     const Settings settings;
     Logger * log;
+    const String database_;
+    const String table_;
 };
 
 }

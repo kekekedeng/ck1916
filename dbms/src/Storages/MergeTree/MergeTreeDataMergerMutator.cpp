@@ -262,7 +262,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         last_merge_with_ttl = current_time;
     }
     else
-        merge_selector = std::make_unique<SimpleMergeSelector>(merge_settings);
+        merge_selector = std::make_unique<SimpleMergeSelector>(merge_settings, data.getDatabaseName(), data.getTableName());
 
     IMergeSelector::PartsInPartition parts_to_merge = merge_selector->select(
         partitions,

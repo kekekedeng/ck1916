@@ -83,7 +83,10 @@ int string_split(const std::string & in, const std::string & delim, std::vector<
     return 0;
 }
 
-int parse_file(const std::string& filename, std::vector<std::string>& part_list)
+int parse_file(const std::string& filename, 
+    std::vector<std::string>& part_list, 
+    std::string & target_database, 
+    std::string & target_table)
 {
     std::ifstream in(filename);
     std::string line;
@@ -94,6 +97,14 @@ int parse_file(const std::string& filename, std::vector<std::string>& part_list)
         {
             part_list.push_back(line);
         }
+
+        if(part_list.size() < 3)
+            return -2;
+
+        target_database = part_list[0];
+        part_list.erase(part_list.begin());
+        target_table = part_list[0];
+        part_list.erase(part_list.begin());
 
         return 0;
     }
@@ -335,12 +346,19 @@ int SimpleMergeSelector::external_select(
     std::vector<std::string> part_name_list;
     std::string path = dir_name + file_list[0];
     // TODO add flock
-    ret = parse_file(path, part_name_list);
+    std::string target_database, target_table;
+    ret = parse_file(path, part_name_list, target_database, target_table);
     if (ret != 0)
     {
         LOG_DEBUG(log, " parse fail " << " path " << path << " ret " << ret);
         return -1;
     }
+
+    if(target_database != database_ || target_table != table_) {
+        LOG_DEBUG(log, " not for this db.table ");
+        return -1;
+    }
+
     ret = rm_file(path);
     if( ret != 0 ) {
         LOG_ERROR(log, "rm_file fail" << path << " ret " << ret);
