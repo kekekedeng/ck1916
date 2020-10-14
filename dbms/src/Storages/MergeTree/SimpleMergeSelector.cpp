@@ -33,7 +33,7 @@ bool is_file_exist(std::string path)
     return false;
 }
 
-int read_file_list(std::string path, std::vector<std::string> & result)
+int read_file_list(std::string path, std::vector<std::string> & result, const std::string& target_database, const std::string& target_table)
 {
     DIR * dir;
     struct dirent * ptr;
@@ -51,7 +51,11 @@ int read_file_list(std::string path, std::vector<std::string> & result)
         }
         else if (ptr->d_type == 8) ///file
         {
-            result.push_back(std::string(ptr->d_name));
+            std::string file_name = std::string(ptr->d_name);
+            std::string target_prefix = target_database + "." + target_table;
+            if(file_name.find(target_prefix) != std::string::npos) {
+                result.push_back(std::string(ptr->d_name));
+            }
         }
     }
 
@@ -83,10 +87,7 @@ int string_split(const std::string & in, const std::string & delim, std::vector<
     return 0;
 }
 
-int parse_file(const std::string& filename, 
-    std::vector<std::string>& part_list, 
-    std::string & target_database, 
-    std::string & target_table)
+int parse_file(const std::string& filename, std::vector<std::string>& part_list)
 {
     std::ifstream in(filename);
     std::string line;
@@ -97,14 +98,6 @@ int parse_file(const std::string& filename,
         {
             part_list.push_back(line);
         }
-
-        if(part_list.size() < 3)
-            return -2;
-
-        target_database = part_list[0];
-        part_list.erase(part_list.begin());
-        target_table = part_list[0];
-        part_list.erase(part_list.begin());
 
         return 0;
     }
@@ -326,19 +319,14 @@ int SimpleMergeSelector::external_select(
     std::string dir_name = "/tmp/merge/";
     mk_dir(dir_name);
     std::vector<std::string> file_list;
-    int ret = read_file_list(dir_name, file_list);
+    int ret = read_file_list(dir_name, file_list, database_, table_);
     if(ret != 0) {
         LOG_ERROR(log, " read_file_list fail " << " ret " << ret);
         return -1;
     }
     if(file_list.size() < 1) {
-        LOG_DEBUG(log, "empty dir");
+        LOG_DEBUG(log, " no external merge for " << database_ << "." << table_);
         return -1;
-    }
-
-    for(const auto & path : file_list)
-    {
-        LOG_DEBUG(log, " file in dir " << path);
     }
 
     std::sort(file_list.begin(), file_list.end());
@@ -346,16 +334,10 @@ int SimpleMergeSelector::external_select(
     std::vector<std::string> part_name_list;
     std::string path = dir_name + file_list[0];
     // TODO add flock
-    std::string target_database, target_table;
-    ret = parse_file(path, part_name_list, target_database, target_table);
+    ret = parse_file(path, part_name_list);
     if (ret != 0)
     {
-        LOG_DEBUG(log, " parse fail " << " path " << path << " ret " << ret);
-        return -1;
-    }
-
-    if(target_database != database_ || target_table != table_) {
-        LOG_DEBUG(log, " not for this db.table ");
+        LOG_ERROR(log, " parse fail " << " path " << path << " ret " << ret);
         return -1;
     }
 
@@ -374,7 +356,8 @@ int SimpleMergeSelector::external_select(
     std::string filter_partition_id = cols[0];
 
     LOG_DEBUG(log, " external_select " << " file_list.size() " << file_list.size() 
-        << " path " << path << " filter_partition_id " << filter_partition_id);
+        << " path " << path << " filter_partition_id " << filter_partition_id 
+        << " db.table " << database_ << "." << table_);
 
     for (const auto & partition : partitions)
     {
